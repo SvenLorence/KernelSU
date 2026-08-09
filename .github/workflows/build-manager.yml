@@ -106,34 +106,34 @@ jobs:
       matrix:
         include:
           - target: aarch64-linux-android
-          - target: x86_64-linux-android
+          #- target: x86_64-linux-android
     uses: ./.github/workflows/ksud.yml
     with:
       target: ${{ matrix.target }}
       pack_lkm: true
       pack_ksuinit: true
   
-  build-ksud-extra:
-    needs: [build-lkm, build-ksuinit]
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-pc-windows-gnu # windows pc
-            os: ubuntu-latest
-          - target: x86_64-apple-darwin # Intel mac
-            os: macos-latest
-          - target: aarch64-apple-darwin # M chip mac
-            os: macos-latest
-          - target: aarch64-unknown-linux-musl # arm64 Linux
-            os: ubuntu-latest
-          - target: x86_64-unknown-linux-musl # x86 Linux
-            os: ubuntu-latest
-    uses: ./.github/workflows/ksud-extra.yml
-    with:
-      target: ${{ matrix.target }}
-      os: ${{ matrix.os }}
-      pack_lkm: true
-      pack_ksuinit: true
+#  build-ksud-extra:
+#    needs: [build-lkm, build-ksuinit]
+#    strategy:
+#      matrix:
+#        include:
+#          - target: x86_64-pc-windows-gnu # windows pc
+#            os: ubuntu-latest
+#          - target: x86_64-apple-darwin # Intel mac
+#            os: macos-latest
+#          - target: aarch64-apple-darwin # M chip mac
+#            os: macos-latest
+#          - target: aarch64-unknown-linux-musl # arm64 Linux
+#            os: ubuntu-latest
+#          - target: x86_64-unknown-linux-musl # x86 Linux
+#            os: ubuntu-latest
+#    uses: ./.github/workflows/ksud-extra.yml
+#    with:
+#      target: ${{ matrix.target }}
+#      os: ${{ matrix.os }}
+#      pack_lkm: true
+#      pack_ksuinit: true
 
   build-manager:
     needs: [generate-key]
@@ -148,6 +148,37 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Patching KernelSU Manager (spoofing)
+        working-directory: ${{ github.workspace }}
+        run: |
+          # Generating random applicationId
+          RANDOM_APPLICATIONID=$(printf "%s.%s.%s" \
+          "$( (tr -cd 'a-z' < /dev/urandom | head -c 3) 2>/dev/null )" \
+          "$( (tr -cd 'a-z' < /dev/urandom | head -c 9) 2>/dev/null )" \
+          "$( (tr -cd 'a-z' < /dev/urandom | head -c 4) 2>/dev/null )")
+
+          echo "Applying \"${RANDOM_APPLICATIONID}\""
+          sed -i "/defaultConfig/a\        applicationId = \"${RANDOM_APPLICATIONID}\"" manager/app/build.gradle.kts
+
+          # Generating random app name
+          RANDOM_APP_NAME=$( (tr -cd 'a-zA-Z0-9' < /dev/urandom | head -c 8) 2>/dev/null )
+          echo "Applying App Name \"${RANDOM_APP_NAME}\""
+          sed -i "s/val defaultManagerName.*/val defaultManagerName = \"${RANDOM_APP_NAME}\"/" manager/app/build.gradle.kts
+
+          echo "Removing warning shield"
+          sed -i '/showGkiWarning/ { n; s/ksuVersion.*/false/}' manager/app/src/main/java/me/weishu/kernelsu/ui/screen/home/HomeUiState.kt
+
+          echo "Fixing \"getVersionCode\""
+          sed -i 's/30000/29999/' $(grep -rLl '30000')
+
+          echo "Verifying sed modifications..."
+          if git diff --quiet; then
+            echo "Error: sed commands did not make any changes!"
+            exit 1
+          else
+            echo "sed commands successfully modified files."
+          fi
 
       - name: Write key
         if: ${{ ( github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' )) || github.ref_type == 'tag' }}
@@ -215,6 +246,8 @@ jobs:
     needs: [build-manager, build-ksud, generate-key]
     if: always() && needs.build-manager.result == 'success' && needs.build-ksud.result == 'success' && needs.generate-key.result == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -246,11 +279,11 @@ jobs:
           name: ksud-aarch64-linux-android
           path: artifacts/ksud-aarch64-linux-android
 
-      - name: Download x86_64 ksud
-        uses: actions/download-artifact@v8
-        with:
-          name: ksud-x86_64-linux-android
-          path: artifacts/ksud-x86_64-linux-android
+#      - name: Download x86_64 ksud
+#        uses: actions/download-artifact@v8
+#        with:
+#          name: ksud-x86_64-linux-android
+#          path: artifacts/ksud-x86_64-linux-android
 
       - name: Place manager apk and ksud artifacts
         run: |
@@ -260,13 +293,13 @@ jobs:
           cp -f "$APK" manager/app/build/outputs/apk/release/
 
           mkdir -p target/aarch64-linux-android/release
-          mkdir -p target/x86_64-linux-android/release
+          #mkdir -p target/x86_64-linux-android/release
           ARM64_KSUD=$(find artifacts/ksud-aarch64-linux-android -type f -name ksud | head -n 1)
-          X86_64_KSUD=$(find artifacts/ksud-x86_64-linux-android -type f -name ksud | head -n 1)
+          #X86_64_KSUD=$(find artifacts/ksud-x86_64-linux-android -type f -name ksud | head -n 1)
           test -n "$ARM64_KSUD"
-          test -n "$X86_64_KSUD"
+          #test -n "$X86_64_KSUD"
           cp -f "$ARM64_KSUD" target/aarch64-linux-android/release/ksud
-          cp -f "$X86_64_KSUD" target/x86_64-linux-android/release/ksud
+          #cp -f "$X86_64_KSUD" target/x86_64-linux-android/release/ksud
 
       - name: Prepare signing inputs
         if: ${{ github.event_name == 'pull_request' || (github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) || github.ref_type == 'tag' }}
@@ -301,7 +334,6 @@ jobs:
             -b release \
             -t release \
             -a arm64-v8a \
-            -a x86_64 \
             -K "$SIGN_KEYSTORE_FILE" \
             -A "$SIGN_KEY_ALIAS" \
             -P "$SIGN_KEYSTORE_PASSWORD" \
@@ -341,3 +373,19 @@ jobs:
             pip3 install telethon
             python3 $GITHUB_WORKSPACE/scripts/ksubot.py $APK
           fi
+
+      - name: Get short SHA
+        if: github.event_name != 'pull_request'
+        run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.SHORT_SHA }}
+          name: Build ${{ env.SHORT_SHA }}
+          files: dist/*.apk
+          body: | 
+            Automated build of the repacked KernelSU Manager.
+            
+            **Commit:** ${{ github.event.head_commit.message }}
