@@ -159,8 +159,8 @@ jobs:
           "$( (tr -cd 'a-z' < /dev/urandom | head -c 4) 2>/dev/null )")
 
           echo "Applying \"${RANDOM_APPLICATIONID}\""
-          sed -i "/defaultConfig/a\        applicationId = \"${RANDOM_APPLICATIONID}\"" manager/app/build.gradle.kts
-
+          sed -i "s/applicationId = managerPackageName/applicationId = \"${RANDOM_APPLICATIONID}\"/" manager/app/build.gradle.kts
+          
           # Generating random app name
           RANDOM_APP_NAME=$( (tr -cd 'a-zA-Z0-9' < /dev/urandom | head -c 8) 2>/dev/null )
           echo "Applying App Name \"${RANDOM_APP_NAME}\""
@@ -170,7 +170,7 @@ jobs:
           sed -i '/showGkiWarning/ { n; s/ksuVersion.*/false/}' manager/app/src/main/java/me/weishu/kernelsu/ui/screen/home/HomeUiState.kt
 
           echo "Fixing \"getVersionCode\""
-          sed -i 's/30000/29999/' $(grep -rLl '30000')
+          sed -i 's/30000/29998/' $(grep -rLl '30000')
 
           echo "Verifying sed modifications..."
           if git diff --quiet; then
